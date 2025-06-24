@@ -43,6 +43,7 @@ node_t *rbtree_insert(rbtree *t, const key_t key)
   cur->key = key;
   cur->left = t->nil;
   cur->right = t->nil;
+  cur->parent = t->nil;
 
   node_t *parent = t->nil;    // 삽입 위치의 부모 노드 저장 변수
   node_t *new_node = t->root; // 현재 탐색 중인 노드 
@@ -51,12 +52,13 @@ node_t *rbtree_insert(rbtree *t, const key_t key)
   {
     parent = new_node; // 현재 노드를 부모로 저장
 
-    if (key == new_node->key) // 키가 같다면
-    {
-      free(cur); // 노드 메모리 해제
-      return new_node; // 기존 노드 반환
-    }    
-    else if (key < new_node->key) // 키가 작으면
+    // if (key == new_node->key) // 키가 같다면
+    // {
+    //   free(cur); // 노드 메모리 해제
+    //   return new_node; // 기존 노드 반환
+    // }
+
+    if (key < new_node->key) // 키가 작으면
       new_node = new_node->left; // 왼쪽으로 이동
     else // 키가 크면
       new_node = new_node->right; // 오른쪽으로 이동
@@ -98,6 +100,7 @@ void rbtree_insert_fixup(rbtree *t, node_t *cur)
         cur->parent->parent->color = RBTREE_RED;
         cur = cur->parent->parent; // 조부모에서 다시 검사
       }
+      // 삼촌이 BLACK인 경우
       else
       {
         // case 1-2: 삽입 노드가 오른쪽 자식이면 -> 왼쪽 회전으로 case 1-3으로 변환
@@ -126,6 +129,7 @@ void rbtree_insert_fixup(rbtree *t, node_t *cur)
         cur->parent->parent->color = RBTREE_RED;
         cur = cur->parent->parent; // 조부모에서 다시 검사
       }
+      // 삼촌이 BLACK인 경우
       else
       {
         // case 2-2: 삽입 노드가 왼쪽 자식 -> 오른쪽 회전으로 case 2-3으로 변환
@@ -255,6 +259,20 @@ node_t *rbtree_min(const rbtree *t)
   return cur;
 }
 
+/// @brief 레드 블랙 트리의 서브트리의 최소값을 가지는 노드를 반환
+/// @param t 탐색할 트리의 포인터
+/// @param start 시작할 서브트리 노드
+/// @return 서브트리의 최소값
+node_t *rbtree_min_subtree(const rbtree *t, node_t *start)
+{
+  node_t *cur = start;
+
+  while (cur->left != t->nil)
+    cur = cur->left;
+  
+  return cur;
+}
+
 /// @brief 레드 블랙 트리 최댓값을 가지는 노드를 반환
 /// @param t 탐색할 트리의 포인터
 /// @return 최댓값을 가지는 노드의 포인터, 트리가 비어있으면 NULL
@@ -271,14 +289,216 @@ node_t *rbtree_max(const rbtree *t)
   return cur; // 최댓값 노드 반환
 }
 
-int rbtree_erase(rbtree *t, node_t *p) 
+/// @brief 트리에서 repalced_node를 substitude_node로 교체하는 함수
+/// @param t 트리의 포인터
+/// @param replaced_node 삭제될 노드
+/// @param substitute_node 대체할 노드
+void rbtree_transplant(rbtree *t, node_t *replaced_node, node_t *substitute_node)
 {
-  // TODO: implement erase
+  // replaced_node가 루트라면, substitute_node를 새로운 루트로 지정
+  if (replaced_node->parent == t->nil)
+    t->root = substitute_node;
+  // replaced_node가 부모의 왼쪽 자식이면 substitute_node를 그 위치로 연결
+  else if (replaced_node == replaced_node->parent->left)
+    replaced_node->parent->left = substitute_node;
+  // replaced_node가 부모의 오른쪽 자식이면 
+  else
+    replaced_node->parent->right = substitute_node;
+  
+  // substitute_node의 부모 포인터를 replaced_node의 부모로 설정
+  substitute_node->parent = replaced_node->parent;
+}
+
+/// @brief 레드 블랙 트리 특정 노드 삭제 함수
+/// @param t 트리 포인터
+/// @param delete_node 삭제할 노드 포인터
+/// @return 성공 시 0 반환
+int rbtree_erase(rbtree *t, node_t *delete_node) 
+{
+  node_t *successor_node = delete_node; // 삭제될 노드 또는 그 위치를 대체할 후속자
+  color_t orgin_color = successor_node->color; // 삭제될 노드의 원래 색깔
+  node_t *fixup_node; // 삭제 후 수정 대상 노드
+  
+  // case 1: 삭제할 노드의 왼쪽 자식이 nil (오른쪽 자식만 있거나 자식이 없는 경우)
+  if (delete_node->left == t->nil)
+  {
+    fixup_node = delete_node->right;                       // 삭제 후 fixup할 노드는 오른쪽 자식
+    rbtree_transplant(t, delete_node, delete_node->right); // delete_node를 오른쪽 자식으로 대체
+  }
+  // case 2: 삭제할 노드의 오른쪽 자식이 nil (왼쪽 자식만 있는 경우)
+  else if (delete_node->right == t->nil)
+  {
+    fixup_node = delete_node->left;                       // 삭제 후 fixup할 노드는 왼쪽 자식
+    rbtree_transplant(t, delete_node, delete_node->left); // delete_node를 왼쪽 자식으로 대체
+  }
+  // case 3: 삭제할 노드가 자식이 둘 다 있는 경우
+  else
+  {
+    // 삭제할 노드의 오른쪽 서브트리에서 최소값을 가지는 노드를 찾음 (후속자 설정)
+    successor_node = rbtree_min_subtree(t, delete_node->right);
+    orgin_color = successor_node->color;  // 후속자 색상 저장
+    fixup_node = successor_node->right;   // 후속자가 오른쪽 자식만 가질 수 있으므로 fixup 대상은 그것
+
+    // 후속자가 삭제할 노드의 바로 오른쪽 자식이 아닌 경우 (더 아래쪽에 위치)
+    if (successor_node != delete_node->right)
+    {
+      // 후속자 노드를 그 오른쪽 자식으로 교체
+      rbtree_transplant(t, successor_node, successor_node->right);
+      // 후속자 노드의 오른쪽에 delete_node의 오른쪽 자식을 붙임
+      successor_node->right = delete_node->right;
+      successor_node->right->parent = successor_node;
+    }
+    // 후속자가 delete_node의 바로 오른쪽 자식인 경우
+    else
+    {
+      // fixup_node의 부모를 후속자로 미리 설정
+      fixup_node->parent = successor_node;
+    }
+    
+    // delete_node를 후속자로 대체
+    rbtree_transplant(t, delete_node, successor_node);
+    // delete_node의 왼쪽 자식을 후속자에게 연결
+    successor_node->left = delete_node->left;
+    successor_node->left->parent = successor_node;
+    // 삭제할 노드의 색을 후속자에게 전달 (레드 블랙 특성을 유지하기 위해)
+    successor_node->color = delete_node->color;
+  }
+
+  // 삭제할 노드가 검은색이라면 트리의 속성을 깨뜨릴 수 있어 fixup
+  if (orgin_color == RBTREE_BLACK)
+    rbtree_delete_fixup(t, fixup_node);  
+
+  // 삭제한 노드 메모리 해제
+  free(delete_node);
   return 0;
 }
 
+/// @brief 레드 블랙 트리 삭제 후 밸런싱 함수
+/// @param t 균형을 복구할 트리 포인터
+/// @param fixup_node 삭제로 인해 불균형이 발생한 노드
+void rbtree_delete_fixup(rbtree *t, node_t *fixup_node)
+{
+  node_t *sibling_node;
+
+  // fixup_node가 루트가 아니고, fixup_node가 검정색일 때
+  while (fixup_node != t->root && fixup_node->color == RBTREE_BLACK)
+  {
+    // fixup_n-node가 부모의 왼쪽 자식일 때
+    if (fixup_node == fixup_node->parent->left)
+    {
+      sibling_node = fixup_node->parent->right; // fixup_node의 형제 노드
+      
+      // case 1: 형제 노드가 빨간색이면 재색칠 후 왼쪽 회전
+      if (sibling_node->color == RBTREE_RED)
+      {
+        sibling_node->color = RBTREE_BLACK;
+        fixup_node->parent->color = RBTREE_RED;
+        left_rotate(t, fixup_node->parent);
+        sibling_node = fixup_node->parent->right; // 형제 노드 갱신
+      }
+
+      // case 2: 형제 노드가 검정색이고 형제의 두 자식 모두 검정색인 경우
+      if (sibling_node->left->color == RBTREE_BLACK && sibling_node->right->color == RBTREE_BLACK)
+      {
+        sibling_node->color = RBTREE_RED; // 형제를 빨간색으로 재색칠
+        fixup_node = fixup_node->parent;  // fixup_node를 부모 노드로 올려 반복
+      }
+      else
+      {
+        // case 3: 형제 노드의 오른쪽 자식이 검적색일 때
+        if (sibling_node->right->color == RBTREE_BLACK)
+        {
+          sibling_node->left->color = RBTREE_BLACK;
+          sibling_node->color = RBTREE_RED;
+          right_rotate(t, sibling_node);
+          sibling_node = fixup_node->parent->right; // 형제 노드 갱신
+        }
+        
+        // case 4: 형제 노드의 오른쪽 자식이 빨간색일 때
+        sibling_node->color = fixup_node->parent->color;
+        fixup_node->parent->color = RBTREE_BLACK;
+        sibling_node->right->color = RBTREE_BLACK;
+        left_rotate(t, fixup_node->parent);
+        fixup_node = t->root; // 복구 끝내기 위해 루트로 이동
+      }
+    }
+    // fixup_node가 부모의 오른쪽 자식일 때 (위의 case 1~4를 좌우 대칭 처리)
+    else
+    {
+      sibling_node = fixup_node->parent->left;
+
+      if (sibling_node->color == RBTREE_RED)
+      {
+        sibling_node->color = RBTREE_BLACK;
+        fixup_node->parent->color = RBTREE_RED;
+        right_rotate(t, fixup_node->parent);
+        sibling_node = fixup_node->parent->left;
+      }
+
+      if (sibling_node->right->color == RBTREE_BLACK && sibling_node->left->color == RBTREE_BLACK)
+      {
+        sibling_node->color = RBTREE_RED;
+        fixup_node = fixup_node->parent;
+      }
+      else
+      {
+        if (sibling_node->left->color == RBTREE_BLACK)
+        {
+          sibling_node->right->color = RBTREE_BLACK;
+          sibling_node->color = RBTREE_RED;
+          left_rotate(t, sibling_node);
+          sibling_node = fixup_node->parent->left;
+        }
+
+        sibling_node->color = fixup_node->parent->color;
+        fixup_node->parent->color = RBTREE_BLACK;
+        sibling_node->left->color = RBTREE_BLACK;
+        right_rotate(t, fixup_node->parent);
+        fixup_node = t->root;
+      }
+    }
+  }
+
+  // fixup 작업이 끝난 후, 마지막 fixup 노드를 검정색으로 설정하여
+  fixup_node->color = RBTREE_BLACK;
+}
+
+/// @brief 레드 블랙 트리 중위 순회하며 키 값을 배열에 저장하는 함수
+/// @param t 대상 트리 포인터
+/// @param arr 결과 저장할 배열 포인터
+/// @param n 배열 크기
+/// @param index 배열 내 현재 저장 위치에 대한 포인터
+/// @return 성공 시 0
 int rbtree_to_array(const rbtree *t, key_t *arr, const size_t n) 
 {
-  // TODO: implement to_array
+  size_t index = 0; // 배열에 저장할 인덱스
+  return rbtree_inorder(t, t->root, arr, n, &index);
+}
+
+/// @brief 레드 블랙 트리 중위 순회하며 키 값을 배열에 저장하는 재귀 함수
+/// @param t 대상 트리 포인터
+/// @param node 현재 방문 중인 노드 포인터
+/// @param arr 결과 저장할 배열 포인터
+/// @param n 배열 크기
+/// @param index 배열 내 현재 저장 위치에 대한 포인터
+/// @return 성공 시 0
+int rbtree_inorder(const rbtree *t, node_t *node, key_t *arr, const size_t n, size_t *index)
+{
+  if (node == t->nil || *index >= n)
+    return 0;
+  
+  // 왼쪽 서브트리 중위 순회
+  rbtree_inorder(t, node->left, arr, n, index);
+
+  // 현재 노드의 키를 배열에 저장 (범위 내에서만)
+  if (*index < n)
+  {
+    arr[*index] = node->key;
+    (*index)++;
+  }
+
+  // 오른쪽 서브트리 중위 순회
+  rbtree_inorder(t, node->right, arr, n, index);
+
   return 0;
 }
