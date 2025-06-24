@@ -472,7 +472,7 @@ void rbtree_delete_fixup(rbtree *t, node_t *fixup_node)
 int rbtree_to_array(const rbtree *t, key_t *arr, const size_t n) 
 {
   size_t index = 0; // 배열에 저장할 인덱스
-  return rbtree_inorder(t, t->root, arr, n, &index);
+  return rbtree_inorder(t, t->root, arr, n, &index); // 중위순회 호출
 }
 
 /// @brief 레드 블랙 트리 중위 순회하며 키 값을 배열에 저장하는 재귀 함수
@@ -484,6 +484,7 @@ int rbtree_to_array(const rbtree *t, key_t *arr, const size_t n)
 /// @return 성공 시 0
 int rbtree_inorder(const rbtree *t, node_t *node, key_t *arr, const size_t n, size_t *index)
 {
+  // base case -> 노드가 nil이고 또는 배열보다 커진다면
   if (node == t->nil || *index >= n)
     return 0;
   
@@ -493,8 +494,8 @@ int rbtree_inorder(const rbtree *t, node_t *node, key_t *arr, const size_t n, si
   // 현재 노드의 키를 배열에 저장 (범위 내에서만)
   if (*index < n)
   {
-    arr[*index] = node->key;
-    (*index)++;
+    arr[*index] = node->key; // 인덱스이 키 값 저장
+    (*index)++;              // 다음 인덱스로 이동
   }
 
   // 오른쪽 서브트리 중위 순회
